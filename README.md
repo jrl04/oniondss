@@ -37,9 +37,9 @@ The development API URL in `mobile/App.js` targets the Android emulator (`10.0.2
 
 Set `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_FROM_NUMBER` from environment secrets. Configure the provider's inbound message webhook to `https://<host>/api/webhooks/sms/inbound/` using POST, and delivery status callback to `/api/webhooks/sms/status/`. Twilio inbound requests receive a TwiML response so an advisory or acknowledgment is returned in the same exchange. Officer replies are sent through the REST client and delivery status is recorded when callbacks arrive.
 
-The webhook uses Twilio signature validation when `DJANGO_DEBUG=0` (unless explicitly disabled). Serve it behind HTTPS and ensure Django sees the original public URL for signature checks. SMS commands are `IRRIGATION <field code>`, `HELP`, `START`, and `STOP`; any other message opens an officer review conversation. A field code is only accepted when it belongs to the farmer associated with the exact sender number.
+The webhook uses Twilio signature validation when `DJANGO_DEBUG=0` (unless explicitly disabled). Serve it behind HTTPS and ensure Django sees the original public URL for signature checks. The webhook durably records the inbound message and returns an empty TwiML response; Celery then classifies the message and queues the reply. With no broker configured, local development processes the message synchronously. SMS commands are `IRRIGATION <field code>`, `HELP`, `START`, and `STOP`; any other message opens an officer review conversation. A field code is only accepted when it belongs to the farmer associated with the exact sender number.
 
-Officer SMS replies run through Celery when `CELERY_BROKER_URL` is set; start a worker with `py -m celery -A config worker -l info` and provide a reachable Redis broker. Without a broker, the prototype sends directly and stores the provider state.
+Officer SMS replies, inbound classification, and scheduled advisory dispatches run through Celery when `CELERY_BROKER_URL` is set; start a worker with `py -m celery -A config worker -l info` and Beat with `py -m celery -A config beat -l info`. The scheduled task creates one dispatch per approved advisory, farmer, and channel, and skips farmers without verified phone consent. Without a broker, the prototype sends directly and stores the provider state.
 
 Before buying/provisioning SMS, the project must confirm with the provider that a Philippine reply-capable number or short code is available, inbound messages reach the webhook, outbound replies reach the pilot networks, and farmer charges are understood. Test on the mobile networks used by pilot participants. Twilio branded alphanumeric sender IDs are not two-way numbers.
 
@@ -49,9 +49,10 @@ Before buying/provisioning SMS, the project must confirm with the provider that 
 - `GET /api/fields/`, `GET /api/advisories/`, `GET /api/conversations/` — authenticated, scoped to the signed-in farmer (staff see all)
 - `POST /api/messages/` — create an app conversation; multipart form supports `body`, optional registered `field` id, and optional `photo`
 - `POST /api/conversations/<id>/reply/` — staff-only officer reply; SMS conversations reply by SMS when consent is on
+- `GET /api/spatial-layers/?field=<id>` — authorized map-layer references for field context
 - `POST /api/webhooks/sms/inbound/`, `/api/webhooks/sms/status/` — provider webhooks
 
-Field boundary GeoJSON is retained on the Field record so it can be joined to the project's existing PostGIS / GeoServer layers. Earth Engine and cloud raster production remain upstream; this messaging service reads only approved advisory records and does not replace the existing geospatial pipeline.
+Field boundary GeoJSON is retained on the Field record so it can be joined to the project's existing PostGIS / GeoServer layers. `ModelRun`, `CropObservation`, and `SpatialLayer` records now preserve Earth Engine, AquaCrop, calibration, artifact, and publication metadata. Raw GEE NDVI, simulated canopy cover, field observations, and calibrated canopy outputs remain separate records; the application does not silently treat NDVI as canopy cover.
 
 ## Pilot acceptance flow
 

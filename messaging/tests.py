@@ -4,8 +4,9 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 from rest_framework.authtoken.models import Token
-from .models import Advisory, Conversation, Field, Farmer, Message
+from .models import Advisory, AdvisoryDispatch, AgronomicCase, Conversation, Field, Farmer, Message, SpatialLayer
 from .services import handle_inbound_sms
+from .tasks import dispatch_scheduled_advisories
 
 User = get_user_model()
 
@@ -59,14 +60,94 @@ class MessagingFlowTests(TestCase):
         self.assertIsNone(conversation)
         self.assertIn("not registered", reply)
         self.assertFalse(Conversation.objects.exists())
+        inbound = Message.objects.get(provider_id="SM-test-4")
+        self.assertEqual(inbound.processing_status, "processed")
+        self.assertIsNone(inbound.conversation)
+
+    def test_sms_phone_normalization_and_open_issue_create_review_case(self):
+        self.farmer.phone = "+639171234567"
+        self.farmer.save(update_fields=["phone"])
+        conversation, reply = handle_inbound_sms("09171234567", "The leaves on F03 are turning yellow", "SM-test-5")
+        self.assertEqual(conversation.field, self.field)
+        self.assertIn("sent to your extension officer", reply)
+        case = AgronomicCase.objects.get(conversation=conversation)
+        self.assertEqual(case.status, "awaiting_review")
+        self.assertEqual(conversation.messages.filter(direction="inbound").count(), 1)
 
     def test_stop_and_start_update_sms_opt_in(self):
-        handle_inbound_sms(self.farmer.phone, "STOP", "SM-test-5")
+        handle_inbound_sms(self.farmer.phone, "STOP", "SM-test-6")
         self.farmer.refresh_from_db()
         self.assertFalse(self.farmer.sms_opt_in)
-        handle_inbound_sms(self.farmer.phone, "START", "SM-test-6")
+        self.assertIsNotNone(self.farmer.sms_opt_out_at)
+        handle_inbound_sms(self.farmer.phone, "START", "SM-test-7")
         self.farmer.refresh_from_db()
         self.assertTrue(self.farmer.sms_opt_in)
+        self.assertEqual(self.farmer.sms_opt_in_source, "sms")
+
+    def test_app_issue_creates_case_and_officer_reply_answers_it(self):
+        farmer_client = APIClient()
+        farmer_client.credentials(HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=self.user).key}")
+        issue = farmer_client.post("/api/messages/", {"field": self.field.pk, "body": "The leaves on F03 are turning yellow"}, format="json")
+        self.assertEqual(issue.status_code, 201)
+        conversation_id = issue.data["id"]
+        self.assertEqual(issue.data["status"], "awaiting_officer")
+        self.assertEqual(issue.data["case_status"], "awaiting_review")
+
+        officer_client = APIClient()
+        officer_client.credentials(HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=self.officer).key}")
+        reply = officer_client.post(f"/api/conversations/{conversation_id}/reply/", {"body": "Please inspect soil moisture and send a follow-up photo."}, format="json")
+        self.assertEqual(reply.status_code, 200)
+        conversation = Conversation.objects.get(pk=conversation_id)
+        self.assertEqual(conversation.status, "answered")
+        self.assertEqual(conversation.case.status, "answered")
+
+    def test_spatial_layers_are_visible_to_officers_but_not_restricted_to_farmers(self):
+        layer = SpatialLayer.objects.create(
+            field=self.field,
+            name="Latest NDVI",
+            service_url="https://maps.example.test/geoserver/wms",
+            layer_name="onion:f03_ndvi",
+            restricted=True,
+        )
+        farmer_client = APIClient()
+        farmer_client.credentials(HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=self.user).key}")
+        self.assertEqual(farmer_client.get(f"/api/spatial-layers/?field={self.field.pk}").data, [])
+
+        officer_client = APIClient()
+        officer_client.credentials(HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=self.officer).key}")
+        response = officer_client.get(f"/api/spatial-layers/?field={self.field.pk}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data[0]["id"], layer.pk)
+
+    def test_scheduled_advisory_dispatch_is_opt_in_and_idempotent(self):
+        advisory = Advisory.objects.create(
+            field=self.field,
+            topic="irrigation",
+            title="Scheduled irrigation check",
+            body="Check soil moisture before irrigating.",
+            approved=True,
+            published_at=timezone.now() - timedelta(minutes=5),
+            scheduled_at=timezone.now() - timedelta(minutes=1),
+        )
+        self.assertEqual(dispatch_scheduled_advisories(), 1)
+        dispatch = AdvisoryDispatch.objects.get(advisory=advisory, farmer=self.farmer)
+        self.assertEqual(dispatch.status, "failed")
+        self.assertEqual(dispatch.message.intent, "scheduled_advisory")
+        self.assertEqual(dispatch_scheduled_advisories(), 0)
+
+        self.farmer.sms_opt_in = False
+        self.farmer.save(update_fields=["sms_opt_in"])
+        second = Advisory.objects.create(
+            field=self.field,
+            topic="irrigation",
+            title="Opt-in required",
+            body="This message should be skipped.",
+            approved=True,
+            published_at=timezone.now() - timedelta(minutes=5),
+            scheduled_at=timezone.now() - timedelta(minutes=1),
+        )
+        self.assertEqual(dispatch_scheduled_advisories(), 1)
+        self.assertEqual(AdvisoryDispatch.objects.get(advisory=second).status, "skipped")
 
     def test_farmer_sees_only_own_conversations_and_officer_can_reply(self):
         other_user = User.objects.create_user(username="farmer2", password="test-pass-123")
