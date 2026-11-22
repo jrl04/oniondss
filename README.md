@@ -5,7 +5,7 @@ This repository starts the two-way communication layer described in the project 
 ## Requirements
 
 - Python 3.11 or newer
-- Node.js 20 or newer and Expo Go for the mobile prototype
+- Node.js 22.13 or newer and an Expo SDK 58 test client for the mobile prototype
 - SQLite for local development; PostgreSQL for a deployed pilot
 - A public HTTPS endpoint and a reply-capable SMS number for the SMS pilot
 
@@ -23,6 +23,31 @@ py manage.py runserver
 
 The API is at `http://127.0.0.1:8000/api/`, Django admin at `/admin/`, and the officer inbox at `/officer/`. Create a farmer login in Users, create a matching Farmer record and set its `user` relation, add that farmer's fields, and set `phone_verified` after verifying ownership. Set `sms_opt_in` only after recording consent. Add approved Advisory records with a publication date for automatic IRRIGATION replies. The admin site is the initial account and field management surface.
 
+## Farmer field map and NDVI
+
+Build the React and TypeScript map before opening it. Django serves the generated JavaScript and CSS as static assets. For deployment, run the build before Django's `collectstatic`.
+
+```powershell
+cd web
+npm.cmd ci
+npm.cmd run build
+cd ..
+```
+
+Sign in with a staff account and open `/fields/map/`. The map opens on Ilocos Norte. Search by farmer or field name or code and select a field to zoom in. In Django admin, set each registered field's **Boundary** to a GeoJSON Point, Polygon, or MultiPolygon geometry. Points use longitude first, for example `{"type":"Point","coordinates":[120.59,18.20]}`. Fields without a saved location are listed with their location status.
+
+For the NDVI overlay, use the Earth Engine image asset produced by the project's NDVI workflow. Enable Earth Engine for a Google Cloud project and grant the Django runtime access to the image asset. For local development, authenticate with the Earth Engine CLI in the same environment used to run Django:
+
+```powershell
+earthengine authenticate
+$env:EARTH_ENGINE_PROJECT = 'your-google-cloud-project'
+$env:EARTH_ENGINE_NDVI_ASSET = 'projects/your-google-cloud-project/assets/your_ndvi_image'
+$env:EARTH_ENGINE_NDVI_BAND = 'NDVI'
+py manage.py runserver
+```
+
+Set the band name to match the asset. The image should contain NDVI values scaled to −1 through 1. Leaflet uses Stadia Maps Alidade Smooth for the basemap and Google Earth Engine for the raster. Stadia Maps supports local development at `localhost` or `127.0.0.1` without a key, subject to rate limits. Register the deployed website's domain with Stadia Maps before using this basemap there. When Earth Engine is unconfigured or unavailable, the field map remains usable.
+
 ## Run the farmer app
 
 ```powershell
@@ -30,6 +55,8 @@ cd mobile
 npm install
 npx expo start
 ```
+
+For a UI review, open the project in [Expo Go for Android with SDK 58 support](https://expo.dev/go) and tap **Preview sample content** on the sign-in screen. The preview includes sample fields in Ilocos Norte, advisories, and conversations. You can attach a photo and add a sample message without a Django server or farmer account. Preview changes reset when you exit.
 
 The development API URL in `mobile/App.js` targets the Android emulator (`10.0.2.2`). For a physical device, replace it with the development computer's LAN address; for a build, use the deployed HTTPS API URL. The app includes My Fields, Advisories, and Messages views, field selection, photo attachment, and conversation status/history. Users authenticate at `/api/auth/token/` with their Django username and password.
 

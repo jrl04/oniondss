@@ -1,0 +1,28 @@
+﻿{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Farmer field map | Onion DSS</title>
+  <link rel="stylesheet" href="{% static 'messaging/web/field-map.css' %}">
+  <script defer src="{% static 'messaging/web/field-map.js' %}"></script>
+</head>
+<body>
+  <header class="masthead">
+    <nav aria-label="Main navigation">
+      <strong>Multiplier Onion DSS</strong>
+      <a href="{% url 'home' %}">DSS home</a>
+    </nav>
+  </header>
+  <main>
+    <h1>Farmer field map</h1>
+    <div id="field-map-app" data-ndvi-url="{% url 'ndvi-layer' %}">
+      <p>Loading the Ilocos Norte map…</p>
+      <noscript>Enable JavaScript to view the map.</noscript>
+    </div>
+  </main>
+  {{ field_records|json_script:"field-records" }}
+  {{ ndvi_colors|json_script:"ndvi-colors" }}
+</body>
+</html>

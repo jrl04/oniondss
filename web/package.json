@@ -1,0 +1,20 @@
+{
+  "name": "oniondss-web",
+  "private": true,
+  "scripts": {
+    "build": "tsc --noEmit && esbuild ./field-map.tsx --bundle --minify --loader:.png=dataurl --outdir=../messaging/static/messaging/web",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "leaflet": "1.9.4",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/leaflet": "^1.9.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.8.0"
+  }
+}

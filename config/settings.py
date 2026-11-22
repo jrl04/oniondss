@@ -31,3 +31,6 @@ TWILIO_FROM_NUMBER = os.getenv("TWILIO_FROM_NUMBER", "")
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "")
 CELERY_BEAT_SCHEDULE = {"dispatch-scheduled-advisories": {"task": "messaging.tasks.dispatch_scheduled_advisories", "schedule": 60.0}}
+EARTH_ENGINE_PROJECT = os.getenv("EARTH_ENGINE_PROJECT", "")
+EARTH_ENGINE_NDVI_ASSET = os.getenv("EARTH_ENGINE_NDVI_ASSET", "")
+EARTH_ENGINE_NDVI_BAND = os.getenv("EARTH_ENGINE_NDVI_BAND", "NDVI")
