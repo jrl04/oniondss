@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert, Image } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import { previewAdvisories, previewConversations, previewFields } from './preview';
+import { previewAdvisories, previewConversations, previewFarmer, previewFields, previewNotes } from './preview';
+import { FarmerJournal, FarmerProfile } from './FarmerJournal';
 
 const API = 'http://10.0.2.2:8000/api'; // Android emulator; set to the reachable backend URL for a device build.
 const COLORS = { ink:'#24342b', green:'#376c42', pale:'#eff4e9', white:'#fff', muted:'#738075', line:'#dce4d8', orange:'#bb6b2c' };
@@ -12,7 +13,9 @@ export default function App() {
 }
 
 function FarmerApp() {
-  const [tab, setTab] = useState('My Fields');
+  const [tab, setTab] = useState('Journal');
+  const [farmer, setFarmer] = useState(null);
+  const [notes, setNotes] = useState([]);
   const [preview, setPreview] = useState(false);
   const [username, setUsername] = useState(''); const [password, setPassword] = useState(''); const [auth, setAuth] = useState('');
   const [fields, setFields] = useState([]); const [advisories, setAdvisories] = useState([]); const [conversations, setConversations] = useState([]);
@@ -25,20 +28,24 @@ function FarmerApp() {
     setPhoto(null);
   }
   function openPreview() {
+    setFarmer(previewFarmer);
+    setNotes(previewNotes);
     setFields(previewFields);
     setAdvisories(previewAdvisories);
     setConversations(previewConversations);
-    setTab('My Fields');
+    setTab('Journal');
     setPreview(true);
   }
   function leave() {
     setAuth('');
     setPreview(false);
+    setFarmer(null);
+    setNotes([]);
     setPassword('');
     setFields([]);
     setAdvisories([]);
     setConversations([]);
-    setTab('My Fields');
+    setTab('Journal');
     resetDraft();
   }
   async function load() {
@@ -63,7 +70,8 @@ function FarmerApp() {
         body: JSON.stringify({ username, password }),
       });
       if (!response.ok) throw new Error('Sign in rejected');
-      const { token } = await response.json();
+      const { token, farmer_name: farmerName } = await response.json();
+      setFarmer({ name: farmerName || username.trim() || 'Farmer' });
       setPassword('');
       setAuth(token);
     } catch {
@@ -71,6 +79,9 @@ function FarmerApp() {
     } finally {
       setSigningIn(false);
     }
+  }
+  function addNote(note) {
+    setNotes(previous => [{ ...note, id: previous.length + 1 }, ...previous]);
   }
   async function send() {
     const messageText = body.trim();
@@ -109,11 +120,13 @@ function FarmerApp() {
   async function pickPhoto(){ const p=await ImagePicker.requestMediaLibraryPermissionsAsync(); if(!p.granted)return Alert.alert('Photo permission needed'); const r=await ImagePicker.launchImageLibraryAsync({mediaTypes:['images'],quality:.7}); if(!r.canceled)setPhoto(r.assets[0]); }
   if(!auth && !preview) return <SafeAreaView style={s.screen}><View style={s.hero}><Text style={s.kicker}>MULTIPLIER ONION DSS</Text><Text style={s.title}>Advice for your field, when you need it.</Text><Text style={s.sub}>Sign in to see field advisories and talk with your extension officer.</Text></View><View style={s.card}><Text style={s.label}>Username</Text><TextInput style={s.input} value={username} onChangeText={setUsername} autoCapitalize="none"/><Text style={s.label}>Password</Text><TextInput style={s.input} value={password} onChangeText={setPassword} secureTextEntry/><Pressable style={s.primary} onPress={signIn} disabled={signingIn}><Text style={s.primaryText}>{signingIn ? 'Signing in…' : 'Sign in'}</Text></Pressable><Pressable style={[s.secondary, {marginTop: 12, alignItems: 'center'}]} onPress={openPreview} disabled={signingIn}><Text style={s.secondaryText}>Preview sample content</Text></Pressable><Text style={s.small}>Your account and phone number must be linked by the project administrator.</Text></View></SafeAreaView>;
   return <SafeAreaView style={s.screen}><View style={s.top}><View><Text style={s.kicker}>ONION DSS · FARMER</Text><Text style={s.heading}>{tab}</Text></View><Pressable onPress={leave} disabled={sending}><Text style={s.signout}>{preview ? 'Exit preview' : 'Sign out'}</Text></Pressable></View>
-    <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">{preview && <View style={s.previewNotice}><Text style={s.previewLabel}>Sample data</Text><Text style={s.muted}>Sample messages stay on this device and reset when you exit.</Text></View>}
+    <ScrollView key={tab} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">{preview && <View style={s.previewNotice}><Text style={s.previewLabel}>Sample data</Text><Text style={s.muted}>Sample posts and messages reset when you exit.</Text></View>}
+      {tab === 'Profile' && <FarmerProfile farmer={farmer} fields={fields} onFields={() => setTab('My Fields')} onJournal={() => setTab('Journal')} />}
+      {tab === 'Journal' && <FarmerJournal farmer={farmer} notes={notes} addNote={addNote} advisories={advisories} preview={preview} />}
       {tab==='My Fields'&&<><Text style={s.intro}>Your registered plots and crop information.</Text>{fields.length === 0 && <Text style={s.muted}>No registered fields yet.</Text>}{fields.map(f=><View key={f.id} style={s.card}><Text style={s.cardTitle}>{f.name||f.code}</Text><Text style={s.muted}>{f.code} · {f.crop}{f.area_ha?` · ${f.area_ha} ha`:''}</Text></View>)}</>}
       {tab==='Advisories'&&<>{advisories.length === 0 && <Text style={s.muted}>No published advisories yet.</Text>}{advisories.map(a=><View key={a.id} style={s.card}><Text style={s.pill}>{a.field_code} · {preview ? 'SAMPLE' : 'APPROVED'}</Text><Text style={s.cardTitle}>{a.title}</Text><Text style={s.body}>{a.body}</Text><Text style={s.muted}>{a.published_at?new Date(a.published_at).toLocaleDateString():''}</Text></View>)}</>}
       {tab==='Messages'&&<><View style={s.card}><Text style={s.cardTitle}>Ask your extension officer</Text><Text style={s.muted}>Choose a field, describe what you see, and attach a photo if useful.</Text><ScrollView horizontal style={{marginVertical:10}}>{fields.map(f=><Pressable key={f.id} style={[s.chip,fieldId===String(f.id)&&s.chipOn]} onPress={()=>setFieldId(fieldId===String(f.id)?'':String(f.id))}><Text style={fieldId===String(f.id)?s.chipTextOn:s.chipText}>{f.code}</Text></Pressable>)}</ScrollView><TextInput style={[s.input,s.multiline]} placeholder="Describe your question or field issue" multiline value={body} onChangeText={setBody}/>{photo&&<Image source={{uri:photo.uri}} style={s.preview}/>}<View style={s.row}><Pressable style={s.secondary} onPress={pickPhoto}><Text style={s.secondaryText}>＋ Photo</Text></Pressable><Pressable style={s.primarySmall} onPress={send} disabled={sending}><Text style={s.primaryText}>{sending ? 'Sending…' : preview ? 'Add sample message' : 'Send message'}</Text></Pressable></View></View><Text style={s.section}>Conversation history</Text>{conversations.length === 0 && <Text style={s.muted}>No conversations yet.</Text>}{conversations.map(c=><View key={c.id} style={s.card}><View style={s.row}><Text style={s.cardTitle}>{c.field_code||'Field question'}</Text><Text style={s.pill}>{c.status.replace('_',' ')}</Text></View>{c.messages.map(m=><View key={m.id} style={[s.bubble,m.direction==='outbound'?s.reply:s.sent]}><Text style={s.bubbleText}>{m.body}</Text>{m.photo_url && <Image source={{uri: m.photo_url}} style={s.preview} accessibilityLabel="Attached field photo" />}<Text style={s.bubbleMeta}>{m.direction==='outbound'?'Extension officer':'You'} · {new Date(m.created_at).toLocaleString()}</Text></View>)}</View>)}</>}
-    </ScrollView><View style={s.nav}>{['My Fields','Advisories','Messages'].map(t=><Pressable key={t} onPress={()=>setTab(t)} style={s.navItem}><Text style={[s.navText,tab===t&&s.navOn]}>{t}</Text></Pressable>)}</View>
+    </ScrollView><View style={s.nav}>{['Journal','Profile','My Fields','Advisories','Messages'].map(t=><Pressable key={t} onPress={()=>setTab(t)} accessibilityRole="tab" accessibilityState={{selected: tab === t}} style={s.navItem}><Text style={[s.navText,tab===t&&s.navOn]}>{t === 'My Fields' ? 'Fields' : t}</Text></Pressable>)}</View>
   </SafeAreaView>;
 }
 const s=StyleSheet.create({previewNotice:{backgroundColor:COLORS.pale,borderRadius:12,padding:12,marginBottom:14},previewLabel:{color:COLORS.ink,fontWeight:'800'},screen:{flex:1,backgroundColor:'#f6f7f2'},hero:{backgroundColor:COLORS.green,padding:28,paddingTop:46,borderBottomLeftRadius:28,borderBottomRightRadius:28},kicker:{color:'#c6ddb4',fontSize:11,fontWeight:'800',letterSpacing:1.5},title:{color:'white',fontSize:32,fontWeight:'800',lineHeight:38,marginTop:22},heading:{color:COLORS.ink,fontSize:27,fontWeight:'800',marginTop:5},sub:{color:'#e1ecdb',fontSize:15,lineHeight:23,marginTop:12},top:{paddingHorizontal:22,paddingTop:15,paddingBottom:18,flexDirection:'row',justifyContent:'space-between',alignItems:'center'},signout:{color:COLORS.green,fontWeight:'700'},content:{paddingHorizontal:18,paddingBottom:20},intro:{color:COLORS.muted,marginBottom:14},card:{backgroundColor:COLORS.white,borderRadius:18,padding:17,marginBottom:13,borderWidth:1,borderColor:COLORS.line},label:{color:COLORS.ink,fontWeight:'700',marginBottom:6,marginTop:12},input:{backgroundColor:'#fbfcfa',borderColor:COLORS.line,borderWidth:1,borderRadius:11,padding:12,color:COLORS.ink},multiline:{height:94,textAlignVertical:'top'},primary:{backgroundColor:COLORS.green,padding:15,borderRadius:12,alignItems:'center',marginTop:18},primarySmall:{backgroundColor:COLORS.green,paddingVertical:12,paddingHorizontal:16,borderRadius:11},primaryText:{color:'white',fontWeight:'800'},secondary:{borderColor:COLORS.line,borderWidth:1,padding:11,borderRadius:11},secondaryText:{color:COLORS.green,fontWeight:'700'},small:{fontSize:12,color:COLORS.muted,marginTop:13,lineHeight:18},cardTitle:{fontWeight:'800',fontSize:17,color:COLORS.ink,marginTop:7},muted:{color:COLORS.muted,fontSize:13,lineHeight:19,marginTop:5},body:{color:COLORS.ink,fontSize:15,lineHeight:23,marginVertical:10},pill:{color:COLORS.green,fontSize:10,fontWeight:'800',textTransform:'uppercase',letterSpacing:.7},chip:{padding:9,borderRadius:30,backgroundColor:COLORS.pale,marginRight:7},chipOn:{backgroundColor:COLORS.green},chipText:{color:COLORS.green,fontWeight:'700'},chipTextOn:{color:'white',fontWeight:'700'},row:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',gap:9,marginTop:8},section:{fontWeight:'800',fontSize:19,color:COLORS.ink,marginVertical:13},bubble:{padding:12,borderRadius:13,marginTop:10},reply:{backgroundColor:COLORS.pale,alignSelf:'flex-start',maxWidth:'92%'},sent:{backgroundColor:'#e8f0e4',alignSelf:'flex-end',maxWidth:'92%'},bubbleText:{color:COLORS.ink,lineHeight:21},bubbleMeta:{fontSize:10,color:COLORS.muted,marginTop:5},preview:{height:120,borderRadius:12,marginTop:10},nav:{flexDirection:'row',backgroundColor:'white',borderTopColor:COLORS.line,borderTopWidth:1,paddingVertical:11},navItem:{flex:1,alignItems:'center'},navText:{color:COLORS.muted,fontSize:12,fontWeight:'600'},navOn:{color:COLORS.green,fontWeight:'900'}});

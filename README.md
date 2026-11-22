@@ -58,6 +58,8 @@ npx expo start
 
 For a UI review, open the project in [Expo Go for Android with SDK 58 support](https://expo.dev/go) and tap **Preview sample content** on the sign-in screen. The preview includes sample fields in Ilocos Norte, advisories, and conversations. You can attach a photo and add a sample message without a Django server or farmer account. Preview changes reset when you exit.
 
+The app opens on **Journal**, where farmers can read field advisories as posts. **Profile** shows the signed-in farmer's name and registered crop and field information. In preview mode, both tabs use a sample Ilocos Norte profile, and **Write a sample post** lets you try the editor. Sample posts reset when you exit preview.
+
 The development API URL in `mobile/App.js` targets the Android emulator (`10.0.2.2`). For a physical device, replace it with the development computer's LAN address; for a build, use the deployed HTTPS API URL. The app includes My Fields, Advisories, and Messages views, field selection, photo attachment, and conversation status/history. Users authenticate at `/api/auth/token/` with their Django username and password.
 
 ## SMS provider configuration

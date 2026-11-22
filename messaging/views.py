@@ -183,4 +183,9 @@ class FarmerTokenAuth(ObtainAuthToken):
         response = super().post(request, *args, **kwargs)
         if response.status_code != 200: return response
         token = Token.objects.get(key=response.data["token"])
-        return Response({"token": token.key, "is_officer": token.user.is_staff})
+        farmer = farmer_for(token.user)
+        return Response({
+            "token": token.key,
+            "is_officer": token.user.is_staff,
+            "farmer_name": farmer.name if farmer else None,
+        })

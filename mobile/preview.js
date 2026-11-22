@@ -39,3 +39,18 @@ export const previewConversations = [
     ],
   },
 ];
+export const previewFarmer = {
+  name: 'Elena Ramos',
+  location: 'Pasuquin, Ilocos Norte',
+  bio: 'I grow multiplier onions and keep notes on field conditions throughout the season.',
+};
+
+export const previewNotes = [
+  {
+    id: 'first-field-note',
+    title: 'A morning walk through the Pasuquin plot',
+    field_code: 'F03',
+    body: 'I checked the beds before sunrise and marked two rows where the soil was still damp. In the afternoon I took photos from the same spot so I can compare how the rows look later in the week.',
+    published_at: '2026-11-21T10:00:00+08:00',
+  },
+];

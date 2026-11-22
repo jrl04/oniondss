@@ -25,6 +25,14 @@ class MessagingFlowTests(TestCase):
         self.assertContains(response, "/officer/")
         self.assertContains(response, "/fields/map/")
 
+    def test_farmer_sign_in_returns_the_linked_profile_name(self):
+        response = self.client.post("/api/auth/token/", {
+            "username": self.user.username,
+            "password": "test-pass-123",
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["farmer_name"], self.farmer.name)
+
     def test_field_map_and_raster_are_staff_only(self):
         for user in (None, self.user):
             if user:
