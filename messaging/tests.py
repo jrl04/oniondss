@@ -1,6 +1,7 @@
 from datetime import timedelta
+from unittest.mock import patch
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 from rest_framework.authtoken.models import Token
@@ -21,6 +22,36 @@ class MessagingFlowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Farmer messaging and field advice")
         self.assertContains(response, "/officer/")
+        self.assertContains(response, "/fields/map/")
+
+    def test_field_map_and_raster_are_staff_only(self):
+        for user in (None, self.user):
+            if user:
+                self.client.force_login(user)
+            for url in ("/fields/map/", "/fields/map/ndvi/"):
+                self.assertEqual(self.client.get(url).status_code, 302)
+
+        self.field.boundary = {"type": "Point", "coordinates": [120.97, 14.60]}
+        self.field.save(update_fields=["boundary"])
+        self.client.force_login(self.officer)
+        response = self.client.get("/fields/map/")
+        self.assertContains(response, "Farmer field map")
+        self.assertEqual(response.context["field_records"][0]["geometry"], self.field.boundary)
+
+    @override_settings(EARTH_ENGINE_PROJECT="", EARTH_ENGINE_NDVI_ASSET="")
+    def test_field_map_raster_reports_missing_configuration(self):
+        self.client.force_login(self.officer)
+        self.assertEqual(self.client.get("/fields/map/ndvi/").status_code, 503)
+
+    @override_settings(EARTH_ENGINE_PROJECT="test-project", EARTH_ENGINE_NDVI_ASSET="test-image", EARTH_ENGINE_NDVI_BAND="ndvi")
+    @patch("messaging.field_map.get_ndvi_tile_url")
+    def test_field_map_raster_returns_tile_template(self, get_tile_url):
+        get_tile_url.return_value = "https://example.com/{z}/{x}/{y}"
+        self.client.force_login(self.officer)
+        response = self.client.get("/fields/map/ndvi/")
+        self.assertEqual(response.json(), {"tile_url": get_tile_url.return_value})
+        self.assertIn("no-store", response["Cache-Control"])
+        get_tile_url.assert_called_once_with("test-project", "test-image", "ndvi")
 
     def test_api_index_is_public_but_farmer_data_requires_authentication(self):
         response = self.client.get("/api/")
