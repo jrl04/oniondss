@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert, Image } from 'react-native';
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert, Image, Platform } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { previewAdvisories, previewConversations, previewFarmer, previewFields, previewNotes } from './preview';
 import { FarmerJournal, FarmerProfile } from './FarmerJournal';
 
-const API = 'http://10.0.2.2:8000/api'; // Android emulator; set to the reachable backend URL for a device build.
+const localHost = Platform.OS === 'android' ? '10.0.2.2' : '127.0.0.1';
+const API = (process.env.EXPO_PUBLIC_DSS_API_URL || `http://${localHost}:8000/api`).replace(/\/+$/, '');
 const COLORS = { ink:'#24342b', green:'#376c42', pale:'#eff4e9', white:'#fff', muted:'#738075', line:'#dce4d8', orange:'#bb6b2c' };
 
 export default function App() {
@@ -22,6 +23,7 @@ function FarmerApp() {
   const [fieldId, setFieldId] = useState(''); const [body, setBody] = useState(''); const [photo, setPhoto] = useState(null);
   const [sending, setSending] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   function resetDraft() {
     setFieldId('');
     setBody('');
@@ -59,6 +61,14 @@ function FarmerApp() {
       setFields(Array.isArray(fj)?fj:(fj.results||[]));
       setAdvisories(Array.isArray(aj)?aj:(aj.results||[])); setConversations(Array.isArray(cj)?cj:(cj.results||[]));
     } catch { Alert.alert('Cannot reach DSS','Check the API URL and network connection.'); }
+  }
+  async function refreshJournal() {
+    setRefreshing(true);
+    try {
+      await load();
+    } finally {
+      setRefreshing(false);
+    }
   }
   useEffect(()=>{load()},[auth]);
   async function signIn() {
@@ -122,7 +132,10 @@ function FarmerApp() {
   return <SafeAreaView style={s.screen}><View style={s.top}><View><Text style={s.kicker}>ONION DSS · FARMER</Text><Text style={s.heading}>{tab}</Text></View><Pressable onPress={leave} disabled={sending}><Text style={s.signout}>{preview ? 'Exit preview' : 'Sign out'}</Text></Pressable></View>
     <ScrollView key={tab} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">{preview && <View style={s.previewNotice}><Text style={s.previewLabel}>Sample data</Text><Text style={s.muted}>Sample posts and messages reset when you exit.</Text></View>}
       {tab === 'Profile' && <FarmerProfile farmer={farmer} fields={fields} onFields={() => setTab('My Fields')} onJournal={() => setTab('Journal')} />}
-      {tab === 'Journal' && <FarmerJournal farmer={farmer} notes={notes} addNote={addNote} advisories={advisories} preview={preview} />}
+      {tab === 'Journal' && <>
+        {!preview && <Pressable style={s.secondary} onPress={refreshJournal} disabled={refreshing} accessibilityRole="button"><Text style={s.secondaryText}>{refreshing ? 'Refreshing…' : 'Refresh advisories'}</Text></Pressable>}
+        <FarmerJournal farmer={farmer} notes={notes} addNote={addNote} advisories={advisories} preview={preview} />
+      </>}
       {tab==='My Fields'&&<><Text style={s.intro}>Your registered plots and crop information.</Text>{fields.length === 0 && <Text style={s.muted}>No registered fields yet.</Text>}{fields.map(f=><View key={f.id} style={s.card}><Text style={s.cardTitle}>{f.name||f.code}</Text><Text style={s.muted}>{f.code} · {f.crop}{f.area_ha?` · ${f.area_ha} ha`:''}</Text></View>)}</>}
       {tab==='Advisories'&&<>{advisories.length === 0 && <Text style={s.muted}>No published advisories yet.</Text>}{advisories.map(a=><View key={a.id} style={s.card}><Text style={s.pill}>{a.field_code} · {preview ? 'SAMPLE' : 'APPROVED'}</Text><Text style={s.cardTitle}>{a.title}</Text><Text style={s.body}>{a.body}</Text><Text style={s.muted}>{a.published_at?new Date(a.published_at).toLocaleDateString():''}</Text></View>)}</>}
       {tab==='Messages'&&<><View style={s.card}><Text style={s.cardTitle}>Ask your extension officer</Text><Text style={s.muted}>Choose a field, describe what you see, and attach a photo if useful.</Text><ScrollView horizontal style={{marginVertical:10}}>{fields.map(f=><Pressable key={f.id} style={[s.chip,fieldId===String(f.id)&&s.chipOn]} onPress={()=>setFieldId(fieldId===String(f.id)?'':String(f.id))}><Text style={fieldId===String(f.id)?s.chipTextOn:s.chipText}>{f.code}</Text></Pressable>)}</ScrollView><TextInput style={[s.input,s.multiline]} placeholder="Describe your question or field issue" multiline value={body} onChangeText={setBody}/>{photo&&<Image source={{uri:photo.uri}} style={s.preview}/>}<View style={s.row}><Pressable style={s.secondary} onPress={pickPhoto}><Text style={s.secondaryText}>＋ Photo</Text></Pressable><Pressable style={s.primarySmall} onPress={send} disabled={sending}><Text style={s.primaryText}>{sending ? 'Sending…' : preview ? 'Add sample message' : 'Send message'}</Text></Pressable></View></View><Text style={s.section}>Conversation history</Text>{conversations.length === 0 && <Text style={s.muted}>No conversations yet.</Text>}{conversations.map(c=><View key={c.id} style={s.card}><View style={s.row}><Text style={s.cardTitle}>{c.field_code||'Field question'}</Text><Text style={s.pill}>{c.status.replace('_',' ')}</Text></View>{c.messages.map(m=><View key={m.id} style={[s.bubble,m.direction==='outbound'?s.reply:s.sent]}><Text style={s.bubbleText}>{m.body}</Text>{m.photo_url && <Image source={{uri: m.photo_url}} style={s.preview} accessibilityLabel="Attached field photo" />}<Text style={s.bubbleMeta}>{m.direction==='outbound'?'Extension officer':'You'} · {new Date(m.created_at).toLocaleString()}</Text></View>)}</View>)}</>}

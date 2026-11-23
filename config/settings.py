@@ -25,6 +25,13 @@ MEDIA_ROOT = BASE_DIR / "media"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 REST_FRAMEWORK = {"DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework.authentication.TokenAuthentication", "rest_framework.authentication.SessionAuthentication"], "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"]}
 CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:8081").split(",")
+SESSION_COOKIE_AGE = int(os.getenv("DJANGO_SESSION_IDLE_SECONDS", "1800"))
+SESSION_COOKIE_SECURE = not DEBUG
+MIDDLEWARE.insert(
+    MIDDLEWARE.index("django.contrib.auth.middleware.AuthenticationMiddleware") + 1,
+    "messaging.middleware.RefreshWebSession",
+)
+MAP_GEOJSON_DIR = Path(os.getenv("MAP_GEOJSON_DIR") or BASE_DIR / "map_data")
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
 TWILIO_FROM_NUMBER = os.getenv("TWILIO_FROM_NUMBER", "")

@@ -158,6 +158,7 @@ class MessagingFlowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data[0]["id"], layer.pk)
 
+    @override_settings(CELERY_BROKER_URL="", TWILIO_ACCOUNT_SID="", TWILIO_AUTH_TOKEN="", TWILIO_FROM_NUMBER="")
     def test_scheduled_advisory_dispatch_is_opt_in_and_idempotent(self):
         advisory = Advisory.objects.create(
             field=self.field,
@@ -168,7 +169,8 @@ class MessagingFlowTests(TestCase):
             published_at=timezone.now() - timedelta(minutes=5),
             scheduled_at=timezone.now() - timedelta(minutes=1),
         )
-        self.assertEqual(dispatch_scheduled_advisories(), 1)
+        with self.captureOnCommitCallbacks(execute=True):
+            self.assertEqual(dispatch_scheduled_advisories(), 1)
         dispatch = AdvisoryDispatch.objects.get(advisory=advisory, farmer=self.farmer)
         self.assertEqual(dispatch.status, "failed")
         self.assertEqual(dispatch.message.intent, "scheduled_advisory")

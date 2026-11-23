@@ -7,6 +7,7 @@ import './field-map.css';
 
 type Field = { id: number; code: string; name: string; farmer: string; geometry: GeoJsonObject | null };
 type RasterResponse = { tile_url?: string; detail?: string };
+type VectorLayer = { name: string; url: string };
 
 // Approximate province viewport, including the northern coastline.
 const province = L.latLngBounds([17.69, 120.40], [18.66, 121.00]);
@@ -31,7 +32,9 @@ function createFieldLayer(field: Field) {
   }
 }
 
-function FieldMap({ fields, colors, ndviUrl }: { fields: Field[]; colors: string[]; ndviUrl: string }) {
+function FieldMap({ fields, colors, ndviUrl, vectors }: {
+  fields: Field[]; colors: string[]; ndviUrl: string; vectors: VectorLayer[];
+}) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map>();
   const layers = useRef(new Map<number, L.GeoJSON>());
@@ -42,6 +45,9 @@ function FieldMap({ fields, colors, ndviUrl }: { fields: Field[]; colors: string
   const [status, setStatus] = useState('Connecting to Earth Engine…');
   const [visible, setVisible] = useState(true);
   const [opacity, setOpacity] = useState(75);
+  const [vectorUrl, setVectorUrl] = useState('');
+  const [vector, setVector] = useState<L.GeoJSON>();
+  const [vectorStatus, setVectorStatus] = useState('');
 
   useEffect(() => {
     const instance = L.map(container.current!, { maxZoom: 19, zoomSnap: 0.25 });
@@ -60,6 +66,7 @@ function FieldMap({ fields, colors, ndviUrl }: { fields: Field[]; colors: string
     basemap.on('load', () => setBasemapFailed(!loadedTile));
     basemap.addTo(instance);
     instance.createPane('ndvi').style.zIndex = '350';
+    instance.createPane('vector').style.zIndex = '375';
     const fieldLayers = new Map<number, L.GeoJSON>();
     for (const field of fields) {
       const layer = createFieldLayer(field);
@@ -72,6 +79,59 @@ function FieldMap({ fields, colors, ndviUrl }: { fields: Field[]; colors: string
       map.current = undefined;
     };
   }, [fields]);
+
+  useEffect(() => {
+    const instance = map.current;
+    setVector(undefined);
+    setVectorStatus('');
+    if (!vectorUrl || !instance) return;
+    const controller = new AbortController();
+    let layer: L.GeoJSON | undefined;
+    setVectorStatus('Loading vector layer…');
+    async function loadVector() {
+      try {
+        const response = await fetch(vectorUrl, { signal: controller.signal });
+        if (response.redirected) {
+          window.location.reload();
+          return;
+        }
+        if (!response.ok) throw new Error();
+        const data = await response.json();
+        if (controller.signal.aborted) return;
+        layer = L.geoJSON(data, {
+          pane: 'vector',
+          style: { color: '#925522', weight: 1, fillColor: '#dc9743', fillOpacity: 0.38 },
+          pointToLayer: (_, latlng) => L.circleMarker(latlng, { pane: 'vector', radius: 5, color: '#925522' }),
+          onEachFeature: (feature, featureLayer) => {
+            const details = document.createElement('dl');
+            for (const [key, value] of Object.entries(feature.properties ?? {})) {
+              if (value == null || value === '') continue;
+              const label = document.createElement('dt');
+              const text = document.createElement('dd');
+              label.textContent = key;
+              text.textContent = String(value);
+              details.append(label, text);
+            }
+            if (details.childElementCount) featureLayer.bindPopup(details, { maxHeight: 260 });
+          },
+        });
+        if (!layer.getBounds().isValid()) {
+          setVectorStatus('This layer contains no mappable features.');
+          return;
+        }
+        layer.addTo(instance!);
+        setVector(layer);
+        setVectorStatus('');
+      } catch {
+        if (!controller.signal.aborted) setVectorStatus('The vector layer could not be loaded.');
+      }
+    }
+    void loadVector();
+    return () => {
+      controller.abort();
+      layer?.remove();
+    };
+  }, [vectorUrl]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -130,6 +190,18 @@ function FieldMap({ fields, colors, ndviUrl }: { fields: Field[]; colors: string
     <div className="workspace">
       <aside aria-label="Map controls">
         <section className="panel">
+          <h2>Vector overlays</h2>
+          {vectors.length ? <>
+            <label htmlFor="vector-layer">GeoJSON layer</label>
+            <select id="vector-layer" value={vectorUrl} onChange={event => setVectorUrl(event.target.value)}>
+              <option value="">None</option>
+              {vectors.map(item => <option key={item.url} value={item.url}>{item.name.replace(/[-_]+/g, ' ')}</option>)}
+            </select>
+            {vector && <button className="zoom-fields" onClick={() => map.current?.fitBounds(vector.getBounds(), { padding: [24, 24], maxZoom: 17 })}>Zoom to layer</button>}
+            {vectorStatus && <p className="muted" role="status">{vectorStatus}</p>}
+          </> : <p className="muted">No GeoJSON overlays have been imported.</p>}
+        </section>
+        <section className="panel">
           <div className="section-heading"><h2>Registered fields</h2><span>{mapped.size} mapped</span></div>
           <label htmlFor="field-search">Search by field or farmer</label>
           <input id="field-search" type="search" value={query} onChange={event => setQuery(event.target.value)} />
@@ -176,5 +248,6 @@ const mount = document.getElementById('field-map-app');
 if (mount) {
   const fields: Field[] = JSON.parse(document.getElementById('field-records')!.textContent!);
   const colors: string[] = JSON.parse(document.getElementById('ndvi-colors')!.textContent!);
-  createRoot(mount).render(<FieldMap fields={fields} colors={colors} ndviUrl={mount.dataset.ndviUrl!} />);
+  const vectors: VectorLayer[] = JSON.parse(document.getElementById('vector-layers')!.textContent!);
+  createRoot(mount).render(<FieldMap fields={fields} colors={colors} ndviUrl={mount.dataset.ndviUrl!} vectors={vectors} />);
 }

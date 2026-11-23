@@ -3,8 +3,9 @@ import logging
 from django.conf import settings
 from django.contrib.admin.views.decorators import staff_member_required
 from django.core.cache import cache
-from django.http import JsonResponse
+from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import render
+from django.urls import reverse
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET
 
@@ -12,6 +13,14 @@ from .models import Field
 
 logger = logging.getLogger(__name__)
 NDVI_COLORS = ["a33a2b", "e8ae51", "f2edac", "66aa62", "17583b"]
+
+
+def local_layers():
+    return {
+        path.stem: path
+        for path in sorted(settings.MAP_GEOJSON_DIR.glob("*.geojson"))
+        if path.is_file() and not path.is_symlink()
+    }
 
 
 @staff_member_required
@@ -32,7 +41,25 @@ def field_map(request):
     return render(request, "messaging/field_map.html", {
         "field_records": records,
         "ndvi_colors": NDVI_COLORS,
+        "vector_layers": [
+            {"name": name, "url": reverse("field-map-vector", args=[name])}
+            for name in local_layers()
+        ],
     })
+
+
+@staff_member_required
+@never_cache
+@require_GET
+def vector_layer(request, name):
+    path = local_layers().get(name)
+    if path is None:
+        raise Http404
+    try:
+        source = path.open("rb")
+    except FileNotFoundError as exc:
+        raise Http404 from exc
+    return FileResponse(source, content_type="application/geo+json")
 
 
 def get_ndvi_tile_url(project, asset, band):

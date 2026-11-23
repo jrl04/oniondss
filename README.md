@@ -25,6 +25,22 @@ The API is at `http://127.0.0.1:8000/api/`, Django admin at `/admin/`, and the o
 
 ## Farmer field map and NDVI
 
+Web sessions expire after 30 minutes without an interactive web request. Set `DJANGO_SESSION_IDLE_SECONDS` in the Django process environment to change it. The officer inbox's automatic refresh does not extend the session.
+
+### Import a soil shapefile
+
+Keep the `.shp`, `.shx`, `.dbf`, and `.prj` files together. Run the converter using GDAL's `ogr2ogr`. Pass the full executable path with `--ogr2ogr` if it is outside your PATH.
+
+```powershell
+.\dss_env\Scripts\python.exe manage.py convert_shapefile "C:\path\to\PhilSoilSeries_Clip.shp" --name "Ilocos Norte soil series" --ogr2ogr "C:\Program Files\QGIS 3.44.13\bin\ogr2ogr.exe"
+```
+
+The command preserves the attribute table and reprojects the layer to WGS84 longitude and latitude. If the shapefile lacks a `.prj`, supply its actual source CRS through `--source-crs`. Use `--encoding` to override DBF text encoding or `--replace` to update a previous import. Output goes to the private `map_data` directory by default, configurable via `MAP_GEOJSON_DIR`.
+
+Reload `/fields/map/`, pick the layer under **Vector overlays**, and click **Zoom to layer**. Click a feature to inspect its attributes. Staff sign-in is required to fetch layers.
+
+### Build and configure the map
+
 Build the React and TypeScript map before opening it. Django serves the generated JavaScript and CSS as static assets. For deployment, run the build before Django's `collectstatic`.
 
 ```powershell
@@ -60,7 +76,14 @@ For a UI review, open the project in [Expo Go for Android with SDK 58 support](h
 
 The app opens on **Journal**, where farmers can read field advisories as posts. **Profile** shows the signed-in farmer's name and registered crop and field information. In preview mode, both tabs use a sample Ilocos Norte profile, and **Write a sample post** lets you try the editor. Sample posts reset when you exit preview.
 
-The development API URL in `mobile/App.js` targets the Android emulator (`10.0.2.2`). For a physical device, replace it with the development computer's LAN address; for a build, use the deployed HTTPS API URL. The app includes My Fields, Advisories, and Messages views, field selection, photo attachment, and conversation status/history. Users authenticate at `/api/auth/token/` with their Django username and password.
+The development API defaults to `http://10.0.2.2:8000/api` on Android and `http://127.0.0.1:8000/api` in the browser. Set `EXPO_PUBLIC_DSS_API_URL` before starting Expo to use a Django address reachable from a physical device or a deployed HTTPS API. Users authenticate at `/api/auth/token/` with their Django username and password.
+
+### Test web-to-mobile advisories
+
+1. Run `py manage.py seed_communication_demo` against the local SQLite database with Django debug mode enabled. Start Django on port `8000`.
+2. From `mobile`, run `npx.cmd expo start --web --port 8081` and open it as `http://localhost:8081` to match the default CORS configuration. Sign in as `dss-demo-farmer` with password `DssDemo-F03-only`. Use **Sign in** to load the Django data.
+3. In Django admin, add an advisory for **Pasuquin Demo Plot (F03)**. Check **Approved** and set **Published at** to the current time or earlier. Select **Refresh advisories** on the app's **Journal** screen to see the update.
+4. Run `py manage.py test messaging.test_communication_demo` to simulate an SMS from the fictional number `+12025550143`. The test posts `IRRIGATION F03` to the inbound webhook and verifies the generated reply without sending an SMS or using provider credits.
 
 ## SMS provider configuration
 

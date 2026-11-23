@@ -31,6 +31,9 @@ input[type=search], input[type=range] { width: 100%; margin: 6px 0 0; }
 .fields { list-style: none; max-height: 280px; overflow: auto; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
 .field { display: grid; width: 100%; text-align: left; }
 .zoom-fields { margin-top: 10px; }
+#vector-layer { display: block; width: 100%; margin-top: 6px; padding: 8px; font: inherit; color: var(--ink); background: white; border: 1px solid var(--line); border-radius: 8px; }
+.leaflet-popup-content dt { font-weight: 700; }
+.leaflet-popup-content dd { margin: 0 0 6px; overflow-wrap: anywhere; }
 .toggle { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
 .muted { margin: 8px 0 12px; }
 .legend { height: 10px; border-radius: 5px; margin-top: 10px; }
